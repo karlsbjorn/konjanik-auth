@@ -75,26 +75,33 @@ class PlayerCharacter:
     @classmethod
     async def create(cls, name: str):
         self = PlayerCharacter()
+
+        data = await cls.get_character_data(name)
+
+        self.name = name
+        self.ilvl = data["character"]["items"]["item_level_equipped"]
+        self.score = data["keystoneScores"]["allScore"]
+        #self.spec_and_class = f"{data['spec']['name']} {data['class']['name']}"
+        self.guild_rank = data["rank"]
+
+        return self
+
+    @classmethod
+    async def get_character_data(cls, name):
         async with RaiderIO() as rio:
             # This shouldn't be accessed every time, but we use caching, so it's probably ok
             guild_data = await rio.get_guild_roster("eu", "ragnaros", "Jahaci Rumene Kadulje")
-
-        data = next(
+        if data := next(
             (
                 character
                 for character in guild_data["guildRoster"]["roster"]
                 if character["character"]["name"] == name
             ),
             None,
-        )
-        if not data:
+        ):
+            return data
+        else:
             raise CharacterNotFound("Character not found")
-        self.name = name
-        self.ilvl = data["character"]["items"]["item_level_equipped"]
-        self.score = data["keystoneScores"]["allScore"]
-        #self.spec_and_class = f"{data['spec']['name']} {data['class']['name']}"
-        self.guild_rank = data["rank"]
-        return self
 
 
 class CharacterNotFound(Exception):
