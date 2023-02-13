@@ -1,9 +1,17 @@
+import logging
+
+from asyncpg import UniqueViolationError
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 import config
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
 from raiderio_async import RaiderIO
+
+from models import GuildMember
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="Konjanik OAuth2")
 
@@ -54,10 +62,42 @@ async def verified_role(code: str):
             role.add_metadata(key=config.GUILD_RANKS[player_character.guild_rank], value=True)
         role.add_metadata(key="ilvl", value=player_character.ilvl)
         role.add_metadata(key="mplusscore", value=int(player_character.score))
-        #role.add_metadata(key="class", value=player_character.spec_and_class)
+        # role.add_metadata(key="class", value=player_character.spec_and_class)
 
         # set role metadata
         await user.edit_role_connection(role)
+
+        # save data to db
+        await GuildMember.create_table(if_not_exists=True)
+        try:
+            log.info(f"Inserting {character_name} into db")
+            await GuildMember.insert(
+                GuildMember(
+                    user_id=str(user.id),
+                    character_name=character_name,
+                    guild_rank=str(player_character.guild_rank),
+                    ilvl=str(player_character.ilvl),
+                    score=str(player_character.score),
+                    access_token=token.access_token,
+                    refresh_token=token.refresh_token,
+                    token_expires_at=str(token.expires_at.timestamp()),
+                ),
+            )
+            log.info(f"Inserted {character_name} into db")
+        except UniqueViolationError:
+            log.info(f"Updating {character_name} in db")
+            await GuildMember.update(
+                user_id=str(user.id),
+                character_name=character_name,
+                guild_rank=str(player_character.guild_rank),
+                ilvl=str(player_character.ilvl),
+                score=str(player_character.score),
+                access_token=token.access_token,
+                refresh_token=token.refresh_token,
+                token_expires_at=str(token.expires_at.timestamp()),
+            ).where(GuildMember.user_id == str(user.id)).run()
+            log.info(f"Updated {character_name} in db")
+
         return (
             f"Sve je proslo ok. "
             f"Tvoj character je {character_name}. Provjeri svoj Discord profil."
@@ -81,7 +121,7 @@ class PlayerCharacter:
         self.name = name
         self.ilvl = data["character"]["items"]["item_level_equipped"]
         self.score = data["keystoneScores"]["allScore"]
-        #self.spec_and_class = f"{data['spec']['name']} {data['class']['name']}"
+        # self.spec_and_class = f"{data['spec']['name']} {data['class']['name']}"
         self.guild_rank = data["rank"]
 
         return self

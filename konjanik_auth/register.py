@@ -1,7 +1,7 @@
 import asyncio
 
 import config
-from linked_roles import RoleMetadataType, LinkedRolesOAuth2, RoleMetadataRecord
+from linked_roles import LinkedRolesOAuth2, RoleMetadataRecord
 
 
 async def main():
