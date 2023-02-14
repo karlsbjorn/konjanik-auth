@@ -59,7 +59,8 @@ async def verified_role(code: str):
 
         # add metadata
         if player_character.guild_rank in config.GUILD_RANKS.keys():
-            role.add_metadata(key=config.GUILD_RANKS[player_character.guild_rank], value=True)
+            if rank := config.GUILD_RANKS.get(player_character.guild_rank, None):
+                role.add_metadata(key=rank, value=True)
         role.add_metadata(key="ilvl", value=player_character.ilvl)
         role.add_metadata(key="mplusscore", value=int(player_character.score))
         # role.add_metadata(key="class", value=player_character.spec_and_class)
@@ -99,10 +100,10 @@ async def verified_role(code: str):
             log.info(f"Updated {character_name} in db")
 
         return (
-            f"Sve je proslo ok. "
+            f"Sve je prošlo ok. "
             f"Tvoj character je {character_name}. Provjeri svoj Discord profil."
         )
-    return "Nisi autoriziran za ovu radnju. Kontaktiraj @Karlo"
+    return "Nisi autoriziran za ovu radnju. Ako je ovo greška, kontaktiraj @Karlo"
 
 
 class PlayerCharacter:
