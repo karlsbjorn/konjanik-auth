@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 import config
+from discord.ext import tasks
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
+from linked_roles.oauth2 import OAuth2Token
 from raiderio_async import RaiderIO
 
 from models import GuildMember
@@ -28,11 +30,15 @@ client = LinkedRolesOAuth2(
 @app.on_event("startup")
 async def startup():
     await client.start()
+    log.info("Starting update users task")
+    UpdateUsers().update_users.start()
 
 
 @app.on_event("shutdown")
 async def shutdown():
     await client.close()
+    log.info("Stopping update users task")
+    UpdateUsers().update_users.stop()
 
 
 @app.get("/linked-role")
@@ -58,9 +64,6 @@ async def verified_role(code: str):
         player_character = await PlayerCharacter().create(character_name)
 
         # add metadata
-        if player_character.guild_rank in config.GUILD_RANKS.keys():
-            if rank := config.GUILD_RANKS.get(player_character.guild_rank, None):
-                role.add_metadata(key=rank, value=True)
         role.add_metadata(key="ilvl", value=player_character.ilvl)
         role.add_metadata(key="mplusscore", value=int(player_character.score))
         # role.add_metadata(key="class", value=player_character.spec_and_class)
@@ -104,6 +107,60 @@ async def verified_role(code: str):
             f"Tvoj character je {character_name}. Provjeri svoj Discord profil."
         )
     return "Nisi autoriziran za ovu radnju. Ako je ovo greška, kontaktiraj @Karlo"
+
+
+class UpdateUsers:
+    @tasks.loop(hours=1)
+    async def update_users(self):
+        log.info("Updating users")
+        for member in await GuildMember.select():
+            try:
+                refreshed_token = await client._http.refresh_oauth2_token(member["refresh_token"])
+            except Exception as e:
+                log.error(f"Error refreshing token for {member['character_name']}: {e}")
+                continue
+            token = OAuth2Token(client, refreshed_token)
+            await GuildMember.update(
+                access_token=token.access_token,
+                refresh_token=token.refresh_token,
+                token_expires_at=str(token.expires_at.timestamp()),
+            ).where(GuildMember.user_id == str(member["user_id"])).run()
+
+            user = await client.fetch_user(token)
+
+            # log.info(f"{role.to_dict()}")  # debug
+
+            name = config.MEMBERS[int(user.id)]
+            player_character = await PlayerCharacter().create(name)
+            role = RoleConnection(platform_name="World of Warcraft", platform_username=name)
+
+            changes = False
+            if player_character.ilvl != int(member["ilvl"]):
+                log.info(f"Updating {name} ilvl")
+                await GuildMember.update(ilvl=str(player_character.ilvl)).where(
+                    GuildMember.user_id == str(user.id)
+                ).run()
+                role.add_or_edit_metadata(key="ilvl", value=player_character.ilvl)
+                changes = True
+            if player_character.score != float(member["score"]):
+                log.info(f"Updating {name} score")
+                await GuildMember.update(score=str(player_character.score)).where(
+                    GuildMember.user_id == str(user.id)
+                ).run()
+                role.add_or_edit_metadata(key="mplusscore", value=int(player_character.score))
+                changes = True
+
+            if not changes:
+                continue
+            try:
+                await user.edit_role_connection(role)
+                log.info(f"Updated user {name}")
+            except (ValueError, TypeError):
+                log.error(f"Error updating user {name}", exc_info=True)
+
+    @update_users.error
+    async def update_users_error(self, error):
+        log.error(f"Unhandled error in update_users: {error}", exc_info=True)
 
 
 class PlayerCharacter:

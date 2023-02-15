@@ -20,24 +20,24 @@ async def main():
                 type=2,
                 description="M+ Score korisnika",
             ),
-            RoleMetadataRecord(
-                key="guild_master",
-                name="Guild Master",
-                type=7,
-                description="Korisnik je rank Guild Master",
-            ),
-            RoleMetadataRecord(
-                key="officer",
-                name="Officer",
-                type=7,
-                description="Korisnik je rank Officer",
-            ),
-            RoleMetadataRecord(
-                key="raider",
-                name="Raider",
-                type=7,
-                description="Korisnik je rank Raider",
-            ),
+            # RoleMetadataRecord(
+            #     key="guild_master",
+            #     name="Guild Master",
+            #     type=7,
+            #     description="Korisnik je rank Guild Master",
+            # ),
+            # RoleMetadataRecord(
+            #     key="officer",
+            #     name="Officer",
+            #     type=7,
+            #     description="Korisnik je rank Officer",
+            # ),
+            # RoleMetadataRecord(
+            #     key="raider",
+            #     name="Raider",
+            #     type=7,
+            #     description="Korisnik je rank Raider",
+            # ),
             # RoleMetadataRecord(
             #     key="member",
             #     name="Member",
