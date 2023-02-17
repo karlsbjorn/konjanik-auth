@@ -3,6 +3,9 @@ import logging
 from asyncpg import UniqueViolationError
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 import config
 from discord.ext import tasks
@@ -14,6 +17,15 @@ from models import GuildMember
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+
+sentry_sdk.init(
+    dsn=config.SENTRY_DSN,
+    integrations=[
+        FastApiIntegration(),
+        LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+    ],
+    traces_sample_rate=1.0,
+)
 
 app = FastAPI(title="Konjanik OAuth2")
 
@@ -117,7 +129,7 @@ class UpdateUsers:
             try:
                 refreshed_token = await client._http.refresh_oauth2_token(member["refresh_token"])
             except Exception as e:
-                log.error(f"Error refreshing token for {member['character_name']}: {e}")
+                log.warning(f"Error refreshing token for {member['character_name']}: {e}")
                 continue
             token = OAuth2Token(client, refreshed_token)
             await GuildMember.update(
@@ -159,7 +171,7 @@ class UpdateUsers:
                 await user.edit_role_connection(role)
                 log.info(f"Updated user {name}")
             except (ValueError, TypeError):
-                log.error(f"Error updating user {name}", exc_info=True)
+                log.warning(f"Error updating user {name}", exc_info=True)
 
     @update_users.error
     async def update_users_error(self, error):
