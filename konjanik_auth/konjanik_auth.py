@@ -4,6 +4,7 @@ from asyncpg import UniqueViolationError
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 import sentry_sdk
+from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
@@ -23,6 +24,7 @@ sentry_sdk.init(
     integrations=[
         FastApiIntegration(),
         LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        AioHttpIntegration(),
     ],
     traces_sample_rate=1.0,
 )
