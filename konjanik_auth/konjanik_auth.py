@@ -148,8 +148,8 @@ class UpdateUsers:
             player_character = await PlayerCharacter().create(name)
 
             role = RoleConnection(platform_name="World of Warcraft", platform_username=name)
-            role.add_metadata(key="ilvl", value=member["ilvl"])
-            role.add_metadata(key="mplusscore", value=member["score"])
+            role.add_metadata(key="ilvl", value=int(member["ilvl"]))
+            role.add_metadata(key="mplusscore", value=int(member["score"]))
 
             changes = False
             if player_character.ilvl != int(member["ilvl"]):
@@ -157,7 +157,7 @@ class UpdateUsers:
                 await GuildMember.update(ilvl=str(player_character.ilvl)).where(
                     GuildMember.user_id == str(user.id)
                 ).run()
-                role.add_or_edit_metadata(key="ilvl", value=player_character.ilvl)
+                role.add_or_edit_metadata(key="ilvl", value=int(player_character.ilvl))
                 changes = True
             if player_character.score != float(member["score"]):
                 log.info(f"Updating {name} score")
