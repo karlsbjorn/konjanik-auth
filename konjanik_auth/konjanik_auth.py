@@ -1,20 +1,18 @@
 import logging
 
+import config
+import sentry_sdk
 from asyncpg import UniqueViolationError
+from discord.ext import tasks
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
-import sentry_sdk
+from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
+from linked_roles.oauth2 import OAuth2Token
+from models import GuildMember
+from raiderio_async import RaiderIO
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
-
-import config
-from discord.ext import tasks
-from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
-from linked_roles.oauth2 import OAuth2Token
-from raiderio_async import RaiderIO
-
-from models import GuildMember
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)

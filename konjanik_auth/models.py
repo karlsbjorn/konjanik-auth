@@ -1,8 +1,7 @@
+import config
+from piccolo.columns import Text
 from piccolo.engine import PostgresEngine
 from piccolo.table import Table
-from piccolo.columns import Text
-
-import config
 
 DB = PostgresEngine(config=config.DB_CONFIG)
 
