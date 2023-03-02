@@ -146,7 +146,7 @@ class UpdateUsers:
             name = config.MEMBERS[int(user.id)]
             player_character = await PlayerCharacter().create(name)
 
-            role = RoleConnection(platform_name="World of Warcraft", platform_username=name)
+            role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=name)
             role.add_metadata(key="ilvl", value=int(member["ilvl"]))
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
 
