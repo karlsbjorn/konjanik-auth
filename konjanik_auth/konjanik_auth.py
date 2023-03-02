@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
 from linked_roles.oauth2 import OAuth2Token
 from models import GuildMember
-from raiderio_async import RaiderIO
+from playercharacter import PlayerCharacter
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -118,6 +118,7 @@ async def verified_role(code: str):
             f"Sve je prošlo ok. "
             f"Tvoj character je {character_name}. Provjeri svoj Discord profil."
         )
+    log.info(f"{user.id} tried to authenticate but is not in the list of members.")
     return "Nisi autoriziran za ovu radnju. Ako je ovo greška, kontaktiraj @Karlo"
 
 
@@ -149,73 +150,38 @@ class UpdateUsers:
             role.add_metadata(key="ilvl", value=int(member["ilvl"]))
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
 
-            changes = False
-            if player_character.ilvl != int(member["ilvl"]):
-                log.info(f"Updating {name} ilvl")
-                await GuildMember.update(ilvl=str(player_character.ilvl)).where(
-                    GuildMember.user_id == str(user.id)
-                ).run()
-                role.add_or_edit_metadata(key="ilvl", value=int(player_character.ilvl))
-                changes = True
-            if player_character.score != float(member["score"]):
-                log.info(f"Updating {name} score")
-                await GuildMember.update(score=str(player_character.score)).where(
-                    GuildMember.user_id == str(user.id)
-                ).run()
-                role.add_or_edit_metadata(key="mplusscore", value=int(player_character.score))
-                changes = True
-
+            changes = await self.update_member_data(member, player_character, role, user)
             if not changes:
                 continue
+
             try:
                 await user.edit_role_connection(role)
                 log.info(f"Updated user {name}")
             except (ValueError, TypeError):
                 log.warning(f"Error updating user {name}", exc_info=True)
 
+    @staticmethod
+    async def update_member_data(member, player_character, role, user):
+        changes = False
+
+        if player_character.ilvl != int(member["ilvl"]):
+            log.info(f"Updating {player_character.name} ilvl")
+            await GuildMember.update(ilvl=str(player_character.ilvl)).where(
+                GuildMember.user_id == str(user.id)
+            ).run()
+            role.add_or_edit_metadata(key="ilvl", value=int(player_character.ilvl))
+            changes = True
+
+        if player_character.score != float(member["score"]):
+            log.info(f"Updating {player_character.name} score")
+            await GuildMember.update(score=str(player_character.score)).where(
+                GuildMember.user_id == str(user.id)
+            ).run()
+            role.add_or_edit_metadata(key="mplusscore", value=int(player_character.score))
+            changes = True
+
+        return changes
+
     @update_users.error
     async def update_users_error(self, error):
         log.error(f"Unhandled error in update_users: {error}", exc_info=True)
-
-
-class PlayerCharacter:
-    name: str
-    ilvl: int
-    score: float
-    spec_and_class: str
-    guild_rank: int
-
-    @classmethod
-    async def create(cls, name: str):
-        self = PlayerCharacter()
-
-        data = await cls.get_character_data(name)
-
-        self.name = name
-        self.ilvl = data["character"]["items"]["item_level_equipped"]
-        self.score = data["keystoneScores"]["allScore"]
-        # self.spec_and_class = f"{data['spec']['name']} {data['class']['name']}"
-        self.guild_rank = data["rank"]
-
-        return self
-
-    @classmethod
-    async def get_character_data(cls, name):
-        async with RaiderIO() as rio:
-            # This shouldn't be accessed every time, but we use caching, so it's probably ok
-            guild_data = await rio.get_guild_roster("eu", "ragnaros", "Jahaci Rumene Kadulje")
-        if data := next(
-            (
-                character
-                for character in guild_data["guildRoster"]["roster"]
-                if character["character"]["name"] == name
-            ),
-            None,
-        ):
-            return data
-        else:
-            raise CharacterNotFound("Character not found")
-
-
-class CharacterNotFound(Exception):
-    pass
