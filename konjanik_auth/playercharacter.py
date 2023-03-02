@@ -18,8 +18,8 @@ class PlayerCharacter:
         data = await self.get_character_data()
         self.ilvl = data["character"]["items"]["item_level_equipped"]
         self.score = data["keystoneScores"]["allScore"]
-        self.char_class = data["class"]
-        self.char_spec = data["active_spec_name"]
+        self.char_class = data["class"]["name"]
+        self.char_spec = data["spec"]["name"]
         self.guild_rank = data["rank"]
 
         return self
