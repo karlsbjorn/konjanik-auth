@@ -1,5 +1,5 @@
 import config
-from piccolo.columns import Text
+from piccolo.columns import Text, BigInt, Varchar
 from piccolo.engine import PostgresEngine
 from piccolo.table import Table
 
@@ -15,3 +15,8 @@ class GuildMember(Table, db=DB):
     access_token = Text(null=True, default=None)
     refresh_token = Text(null=True, default=None)
     token_expires_at = Text(null=True, default=None)
+
+
+class AssignedCharacter(Table, db=DB):
+    user_id = BigInt(primary_key=True, null=True, default=None, unique=True)
+    character_name = Varchar(null=True, default=None, unique=True)

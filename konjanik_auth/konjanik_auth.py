@@ -8,8 +8,9 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
 from linked_roles.oauth2 import OAuth2Token
-from models import GuildMember
-from playercharacter import PlayerCharacter
+
+from models import GuildMember, AssignedCharacter
+from playercharacter import PlayerCharacter, CharacterNotFound
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -67,10 +68,16 @@ async def verified_role(code: str):
     # get user
     user = await client.fetch_user(token)
 
-    if int(user.id) in config.MEMBERS.keys():
-        character_name = config.MEMBERS[int(user.id)]
+    if int(user.id) in [
+        m["user_id"] for m in await AssignedCharacter.select(AssignedCharacter.user_id)
+    ]:
+        character_name = (
+            await AssignedCharacter.select(AssignedCharacter.character_name)
+            .where(AssignedCharacter.user_id == int(user.id))
+            .first()
+        )["character_name"]
         # set role connection
-        role = RoleConnection(platform_name="World of Warcraft", platform_username=character_name)
+        role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=character_name)
 
         # get character data
         player_character = await PlayerCharacter().create(character_name)
@@ -143,8 +150,17 @@ class UpdateUsers:
 
             # log.info(f"{role.to_dict()}")  # debug
 
-            name = config.MEMBERS[int(user.id)]
-            player_character = await PlayerCharacter().create(name)
+            name = (
+                await AssignedCharacter.select(AssignedCharacter.character_name)
+                .where(AssignedCharacter.user_id == int(user.id))
+                .first()
+            )["character_name"]
+
+            try:
+                player_character = await PlayerCharacter().create(name)
+            except CharacterNotFound as e:
+                log.warning(f"Error fetching character {name}: {e}")
+                continue
 
             role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=name)
             role.add_metadata(key="ilvl", value=int(member["ilvl"]))
