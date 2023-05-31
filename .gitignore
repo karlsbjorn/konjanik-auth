@@ -6,3 +6,5 @@ konjanik_auth/konjanik_auth_old.py
 konjanik_auth/__pycache__/
 
 konjanik_auth/config.py
+
+.vscode/

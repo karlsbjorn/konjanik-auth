@@ -77,7 +77,9 @@ async def verified_role(code: str):
             .first()
         )["character_name"]
         # set role connection
-        role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=character_name)
+        role = RoleConnection(
+            platform_name="Jahači Rumene Kadulje", platform_username=character_name
+        )
 
         # get character data
         player_character = await PlayerCharacter().create(character_name)
