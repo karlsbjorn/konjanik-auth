@@ -20,6 +20,12 @@ async def main():
                 type=2,
                 description="M+ Score korisnika",
             ),
+            RoleMetadataRecord(
+                key="guildlbposition",
+                name="Pozicija na ljestvici",
+                type=1,
+                description="Pozicija korisnika na ljestvici",
+            ),
             # RoleMetadataRecord(
             #     key="guild_master",
             #     name="Guild Master",

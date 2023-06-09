@@ -1,6 +1,6 @@
 import logging
 
-import config
+from konjanik_auth import config
 import sentry_sdk
 from asyncpg import UniqueViolationError
 from discord.ext import tasks
@@ -9,8 +9,8 @@ from fastapi.responses import RedirectResponse
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
 from linked_roles.oauth2 import OAuth2Token
 
-from models import GuildMember, AssignedCharacter
-from playercharacter import PlayerCharacter, CharacterNotFound
+from konjanik_auth.models import GuildMember, AssignedCharacter
+from konjanik_auth.playercharacter import PlayerCharacter, CharacterNotFound
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -87,7 +87,8 @@ async def verified_role(code: str):
         # add metadata
         role.add_metadata(key="ilvl", value=player_character.ilvl)
         role.add_metadata(key="mplusscore", value=int(player_character.score))
-        # role.add_metadata(key="class", value=player_character.spec_and_class)
+        if player_character.guild_lb_position:
+            role.add_metadata(key="guild_lb_position", value=player_character.guild_lb_position)
 
         # set role metadata
         await user.edit_role_connection(role)
@@ -103,6 +104,7 @@ async def verified_role(code: str):
                     guild_rank=str(player_character.guild_rank),
                     ilvl=str(player_character.ilvl),
                     score=str(player_character.score),
+                    guild_lb_position=player_character.guild_lb_position,
                     access_token=token.access_token,
                     refresh_token=token.refresh_token,
                     token_expires_at=str(token.expires_at.timestamp()),
@@ -117,6 +119,7 @@ async def verified_role(code: str):
                 guild_rank=str(player_character.guild_rank),
                 ilvl=str(player_character.ilvl),
                 score=str(player_character.score),
+                guild_lb_position=player_character.guild_lb_position,
                 access_token=token.access_token,
                 refresh_token=token.refresh_token,
                 token_expires_at=str(token.expires_at.timestamp()),
@@ -159,6 +162,7 @@ class UpdateUsers:
             )["character_name"]
 
             try:
+                log.info(f"Fetching character {name}")
                 player_character = await PlayerCharacter().create(name)
             except CharacterNotFound as e:
                 log.warning(f"Error fetching character {name}: {e}")
@@ -167,6 +171,8 @@ class UpdateUsers:
             role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=name)
             role.add_metadata(key="ilvl", value=int(member["ilvl"]))
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
+            if member["guild_lb_position"]:
+                role.add_metadata(key="guildlbposition", value={member["guild_lb_position"]})
 
             changes = await self.update_member_data(member, player_character, role, user)
             if not changes:
@@ -196,6 +202,16 @@ class UpdateUsers:
                 GuildMember.user_id == str(user.id)
             ).run()
             role.add_or_edit_metadata(key="mplusscore", value=int(player_character.score))
+            changes = True
+
+        if player_character.guild_lb_position != member["guild_lb_position"]:
+            log.info(f"Updating {player_character.name} guild_lb_position")
+            await GuildMember.update(guild_lb_position=player_character.guild_lb_position).where(
+                GuildMember.user_id == str(user.id)
+            ).run()
+            role.add_or_edit_metadata(
+                key="guildlbposition", value=player_character.guild_lb_position
+            )
             changes = True
 
         return changes
