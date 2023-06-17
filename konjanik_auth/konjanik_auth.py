@@ -88,7 +88,7 @@ async def verified_role(code: str):
         role.add_metadata(key="ilvl", value=player_character.ilvl)
         role.add_metadata(key="mplusscore", value=int(player_character.score))
         if player_character.guild_lb_position:
-            role.add_metadata(key="guild_lb_position", value=player_character.guild_lb_position)
+            role.add_metadata(key="guildlbposition", value=player_character.guild_lb_position)
 
         # set role metadata
         await user.edit_role_connection(role)
