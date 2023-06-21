@@ -17,6 +17,7 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+logging.getLogger("aiohttp_client_cache.backends.base").setLevel(logging.WARNING)
 
 sentry_sdk.init(
     dsn=config.SENTRY_DSN,
@@ -95,25 +96,9 @@ async def verified_role(code: str):
 
         # save data to db
         await GuildMember.create_table(if_not_exists=True)
-        try:
-            log.info(f"Inserting {character_name} into db")
-            await GuildMember.insert(
-                GuildMember(
-                    user_id=str(user.id),
-                    character_name=character_name,
-                    guild_rank=str(player_character.guild_rank),
-                    ilvl=str(player_character.ilvl),
-                    score=str(player_character.score),
-                    guild_lb_position=player_character.guild_lb_position,
-                    access_token=token.access_token,
-                    refresh_token=token.refresh_token,
-                    token_expires_at=str(token.expires_at.timestamp()),
-                ),
-            )
-            log.info(f"Inserted {character_name} into db")
-        except UniqueViolationError:
-            log.info(f"Updating {character_name} in db")
-            await GuildMember.update(
+        log.info(f"Inserting {character_name} into db")
+        await GuildMember.insert(
+            GuildMember(
                 user_id=str(user.id),
                 character_name=character_name,
                 guild_rank=str(player_character.guild_rank),
@@ -123,12 +108,17 @@ async def verified_role(code: str):
                 access_token=token.access_token,
                 refresh_token=token.refresh_token,
                 token_expires_at=str(token.expires_at.timestamp()),
-            ).where(GuildMember.user_id == str(user.id)).run()
-            log.info(f"Updated {character_name} in db")
+            ),
+        ).on_conflict(
+            action="DO UPDATE",
+            values=GuildMember.all_columns(),
+            target=GuildMember.user_id,
+        )
+        log.info(f"Inserted {character_name} into db")
 
         return (
             f"Sve je prošlo ok. "
-            f"Tvoj character je {character_name}. Provjeri svoj Discord profil."
+            f"Tvoj character je {character_name}. Klikni 'Finish' u Discordu."
         )
     log.info(f"{user.id} tried to authenticate but is not in the list of members.")
     return "Nisi autoriziran za ovu radnju. Ako je ovo greška, kontaktiraj @Karlo"
@@ -162,10 +152,10 @@ class UpdateUsers:
             )["character_name"]
 
             try:
-                log.info(f"Fetching character {name}")
+                log.debug(f"Fetching character {name}")
                 player_character = await PlayerCharacter().create(name)
             except CharacterNotFound as e:
-                log.warning(f"Error fetching character {name}: {e}")
+                log.error(f"Error fetching character {name}: {e}")
                 continue
 
             role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=name)
@@ -180,9 +170,9 @@ class UpdateUsers:
 
             try:
                 await user.edit_role_connection(role)
-                log.info(f"Updated user {name}")
+                log.debug(f"Updated user {name}")
             except (ValueError, TypeError):
-                log.warning(f"Error updating user {name}", exc_info=True)
+                log.error(f"Error updating user {name}", exc_info=True)
 
     @staticmethod
     async def update_member_data(member, player_character, role, user):
