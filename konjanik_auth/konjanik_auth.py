@@ -199,9 +199,12 @@ class UpdateUsers:
             await GuildMember.update(guild_lb_position=player_character.guild_lb_position).where(
                 GuildMember.user_id == str(user.id)
             ).run()
-            role.add_or_edit_metadata(
-                key="guildlbposition", value=player_character.guild_lb_position
-            )
+            if player_character.guild_lb_position:
+                role.add_or_edit_metadata(
+                    key="guildlbposition", value=player_character.guild_lb_position
+                )
+            else:
+                role.remove_metadata(key="guildlbposition")
             changes = True
 
         return changes
