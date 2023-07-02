@@ -162,7 +162,7 @@ class UpdateUsers:
             role.add_metadata(key="ilvl", value=int(member["ilvl"]))
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
             if member["guild_lb_position"]:
-                role.add_metadata(key="guildlbposition", value={member["guild_lb_position"]})
+                role.add_metadata(key="guildlbposition", value=member["guild_lb_position"])
 
             changes = await self.update_member_data(member, player_character, role, user)
             if not changes:
