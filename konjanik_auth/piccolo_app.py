@@ -1,9 +1,8 @@
 import os
+
 from piccolo.conf.apps import AppConfig
-from .models import (
-    GuildMember,
-    AssignedCharacter,
-)
+
+from .models import AssignedCharacter, GuildMember
 
 CURRENT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 

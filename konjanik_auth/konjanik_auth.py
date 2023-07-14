@@ -1,19 +1,19 @@
 import logging
 
-from konjanik_auth import config
 import sentry_sdk
-from asyncpg import UniqueViolationError
 from discord.ext import tasks
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
+from linked_roles.errors import InternalServerError
 from linked_roles.oauth2 import OAuth2Token
-
-from konjanik_auth.models import GuildMember, AssignedCharacter
-from konjanik_auth.playercharacter import PlayerCharacter, CharacterNotFound
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
+
+from konjanik_auth import config
+from konjanik_auth.models import AssignedCharacter, GuildMember
+from konjanik_auth.playercharacter import CharacterNotFound, PlayerCharacter
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -141,7 +141,11 @@ class UpdateUsers:
                 token_expires_at=str(token.expires_at.timestamp()),
             ).where(GuildMember.user_id == str(member["user_id"])).run()
 
-            user = await client.fetch_user(token)
+            try:
+                user = await client.fetch_user(token)
+            except InternalServerError as e:
+                log.error(f"Error fetching user {member['character_name']}: {e}")
+                continue
 
             # log.info(f"{role.to_dict()}")  # debug
 

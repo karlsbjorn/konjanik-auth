@@ -1,4 +1,5 @@
 import logging
+
 from raiderio_async import RaiderIO
 
 log = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class PlayerCharacter:
             char_data = await rio.get_character_profile(
                 "eu", "ragnaros", self.name, ["gear", "mythic_plus_scores"]
             )
-        if char_data and not char_data.get('error'):
+        if char_data and not char_data.get("error"):
             return char_data
 
         raise CharacterNotFound("Character not found")
