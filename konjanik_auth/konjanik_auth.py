@@ -77,13 +77,14 @@ async def verified_role(code: str):
             .where(AssignedCharacter.user_id == int(user.id))
             .first()
         )["character_name"]
-        # set role connection
-        role = RoleConnection(
-            platform_name="Jahači Rumene Kadulje", platform_username=character_name
-        )
 
         # get character data
         player_character = await PlayerCharacter().create(character_name)
+
+        # set role connection
+        role = RoleConnection(
+            platform_name=player_character.full_class_name, platform_username=character_name
+        )
 
         # add metadata
         role.add_metadata(key="ilvl", value=player_character.ilvl)
@@ -162,7 +163,9 @@ class UpdateUsers:
                 log.error(f"Error fetching character {name}: {e}")
                 continue
 
-            role = RoleConnection(platform_name="Jahači Rumene Kadulje", platform_username=name)
+            role = RoleConnection(
+                platform_name=player_character.full_class_name, platform_username=name
+            )
             role.add_metadata(key="ilvl", value=int(member["ilvl"]))
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
             if member["guild_lb_position"]:

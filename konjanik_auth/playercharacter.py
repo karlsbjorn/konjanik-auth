@@ -81,6 +81,10 @@ class PlayerCharacter:
             if character[0] == self.name:
                 return i + 1
 
+    @property
+    def full_class_name(self) -> str:
+        return f"{self.char_spec} {self.char_class}"
+
 
 class CharacterNotFound(Exception):
     pass
