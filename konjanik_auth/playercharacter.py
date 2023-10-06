@@ -31,7 +31,7 @@ class PlayerCharacter:
         except KeyError:
             # Character wasn't in guild
             self.ilvl = data["gear"]["item_level_equipped"]
-            self.score = data["mythic_plus_scores_by_season"]["scores"]["all"]
+            self.score = data["mythic_plus_scores_by_season"][0]["scores"]["all"]
             self.char_class = data["class"]
             self.char_spec = data["active_spec_name"]
             self.guild_rank = None
