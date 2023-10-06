@@ -38,12 +38,12 @@ async def main():
             #     type=7,
             #     description="Korisnik je rank Officer",
             # ),
-            # RoleMetadataRecord(
-            #     key="raider",
-            #     name="Raider",
-            #     type=7,
-            #     description="Korisnik je rank Raider",
-            # ),
+            RoleMetadataRecord(
+                key="raider",
+                name="Raider",
+                type=7,
+                description="Korisnik je rank Raider ili iznad",
+            ),
             # RoleMetadataRecord(
             #     key="member",
             #     name="Member",
