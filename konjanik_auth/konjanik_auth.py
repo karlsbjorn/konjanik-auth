@@ -172,7 +172,7 @@ class UpdateUsers:
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
             if member["guild_lb_position"]:
                 role.add_metadata(key="guildlbposition", value=member["guild_lb_position"])
-            if member["guild_rank"]:
+            if member["guild_rank"] is not None and int(member["guild_rank"]) <= 3:
                 role.add_metadata(key="raider", value=True)
 
             changes = await self.update_member_data(member, player_character, role, user)
@@ -188,6 +188,13 @@ class UpdateUsers:
     @staticmethod
     async def update_member_data(member, player_character, role, user):
         changes = False
+
+        if player_character.name != member["character_name"]:
+            log.info(f"Updating {player_character.name}'s name")
+            await GuildMember.update(character_name=player_character.name).where(
+                GuildMember.user_id == str(user.id)
+            ).run()
+            changes = True
 
         if player_character.ilvl != int(member["ilvl"]):
             log.info(f"Updating {player_character.name} ilvl")
@@ -218,7 +225,10 @@ class UpdateUsers:
                 role.remove_metadata(key="guildlbposition")
             changes = True
 
-        if player_character.guild_rank != member["guild_rank"]:
+        # Pro tip: Don't ever make everything in a table be Text type :)
+        if player_character.guild_rank is not None and player_character.guild_rank != int(
+            member["guild_rank"]
+        ):
             # This will need to be changed if we're doing anything other than Raider rank
             log.info(f"Updating {player_character.name} guild_rank")
             await GuildMember.update(guild_rank=str(player_character.guild_rank)).where(
