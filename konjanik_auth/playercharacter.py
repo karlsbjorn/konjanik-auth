@@ -31,7 +31,7 @@ class PlayerCharacter:
         except KeyError:
             # Character wasn't in guild
             self.ilvl = data["gear"]["item_level_equipped"]
-            self.score = data["mythic_plus_scores"]["all"]
+            self.score = data["mythic_plus_scores_by_season"]["scores"]["all"]
             self.char_class = data["class"]
             self.char_spec = data["active_spec_name"]
             self.guild_rank = None
@@ -57,7 +57,7 @@ class PlayerCharacter:
         log.info(f"{self.name} not in guild")
         async with RaiderIO() as rio:
             char_data = await rio.get_character_profile(
-                "eu", "ragnaros", self.name, ["gear", "mythic_plus_scores"]
+                "eu", "ragnaros", self.name, ["gear", "mythic_plus_scores_by_season:current"]
             )
         if char_data and not char_data.get("error"):
             return char_data
