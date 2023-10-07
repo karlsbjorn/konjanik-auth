@@ -234,7 +234,7 @@ class UpdateUsers:
             await GuildMember.update(guild_rank=str(player_character.guild_rank)).where(
                 GuildMember.user_id == str(user.id)
             ).run()
-            if player_character.guild_rank and player_character.guild_rank <= 3:
+            if player_character.guild_rank is not None and player_character.guild_rank <= 3:
                 role.add_or_edit_metadata(key="raider", value=True)
             else:
                 role.remove_metadata(key="raider")
