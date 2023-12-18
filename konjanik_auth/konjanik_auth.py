@@ -91,7 +91,7 @@ async def verified_role(code: str):
         role.add_metadata(key="mplusscore", value=int(player_character.score))
         if player_character.guild_lb_position:
             role.add_metadata(key="guildlbposition", value=player_character.guild_lb_position)
-        if player_character.guild_rank and player_character.guild_rank <= 4:
+        if player_character.guild_rank and player_character.guild_rank <= 3:
             role.add_metadata(key="raider", value=True)
 
         # set role metadata
@@ -172,7 +172,7 @@ class UpdateUsers:
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
             if member["guild_lb_position"]:
                 role.add_metadata(key="guildlbposition", value=member["guild_lb_position"])
-            if member["guild_rank"] is not None and int(member["guild_rank"]) <= 4:
+            if member["guild_rank"] is not None and int(member["guild_rank"]) <= 3:
                 role.add_metadata(key="raider", value=True)
 
             changes = await self.update_member_data(member, player_character, role, user)
@@ -234,7 +234,7 @@ class UpdateUsers:
             await GuildMember.update(guild_rank=str(player_character.guild_rank)).where(
                 GuildMember.user_id == str(user.id)
             ).run()
-            if player_character.guild_rank is not None and player_character.guild_rank <= 4:
+            if player_character.guild_rank is not None and player_character.guild_rank <= 3:
                 role.add_or_edit_metadata(key="raider", value=True)
             else:
                 role.remove_metadata(key="raider")
