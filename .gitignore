@@ -8,3 +8,5 @@ konjanik_auth/__pycache__/
 konjanik_auth/config.py
 
 .vscode/
+
+*.pyc

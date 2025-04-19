@@ -1,18 +1,20 @@
 import logging
+import time
+from urllib.parse import urlencode
 
+import aiohttp
 import sentry_sdk
 from discord.ext import tasks
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import RedirectResponse
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
-from linked_roles.errors import InternalServerError
 from linked_roles.oauth2 import OAuth2Token
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
 from konjanik_auth import config
-from konjanik_auth.models import AssignedCharacter, GuildMember
+from konjanik_auth.models import AssignedCharacter, BnetToken, DiscordToken, GuildMember
 from konjanik_auth.playercharacter import CharacterNotFound, PlayerCharacter
 
 logging.basicConfig(level=logging.INFO)
@@ -68,63 +70,160 @@ async def verified_role(code: str):
 
     # get user
     user = await client.fetch_user(token)
+    if not user:
+        log.error("Failed to fetch user")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    user_id = int(user.id)
 
-    if int(user.id) in [
-        m["user_id"] for m in await AssignedCharacter.select(AssignedCharacter.user_id)
-    ]:
-        character_name = (
-            await AssignedCharacter.select(AssignedCharacter.character_name)
-            .where(AssignedCharacter.user_id == int(user.id))
-            .first()
-        )["character_name"]
+    await DiscordToken.insert(
+        DiscordToken(
+            user_id=user_id,
+            access_token=token.access_token,
+            refresh_token=token.refresh_token,
+            expires_at=int(token.expires_at.timestamp()),
+        )
+    ).on_conflict(
+        action="DO UPDATE",
+        values=DiscordToken.all_columns(),
+        target=DiscordToken.user_id,
+    )
 
-        # get character data
-        player_character = await PlayerCharacter().create(character_name)
+    # Have user log into bnet as well
+    response = RedirectResponse(url=f"/bnet-auth?discord_user_id={user_id}")
+    return response
 
-        # set role connection
-        role = RoleConnection(
-            platform_name=player_character.full_class_name, platform_username=character_name
+
+@app.get("/bnet-auth")
+async def bnet_auth(discord_user_id: str):
+    """Initiate Battle.net OAuth flow"""
+    params = {
+        "client_id": config.BNET_CLIENT_ID,
+        "redirect_uri": config.BNET_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "wow.profile",
+        "state": discord_user_id,  # Pass Discord user ID as state for verification
+    }
+
+    auth_url = f"{config.BNET_AUTHORIZE_URL}?{urlencode(params)}"
+    return RedirectResponse(url=auth_url)
+
+
+@app.get("/bnet-callback")
+async def bnet_callback(
+    code: str,
+    state: str,
+):
+    discord_user_id = state
+    if not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You missed a step. Log in through Discord first.",
         )
 
-        # add metadata
-        role.add_metadata(key="ilvl", value=player_character.ilvl)
-        role.add_metadata(key="mplusscore", value=int(player_character.score))
-        if player_character.guild_lb_position:
-            role.add_metadata(key="guildlbposition", value=player_character.guild_lb_position)
-        if player_character.guild_rank and player_character.guild_rank <= 3:
-            role.add_metadata(key="raider", value=True)
+    async with aiohttp.ClientSession() as session:
+        auth = aiohttp.BasicAuth(config.BNET_CLIENT_ID, config.BNET_CLIENT_SECRET)
+        async with session.post(
+            config.BNET_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": config.BNET_REDIRECT_URI,
+            },
+            auth=auth,
+        ) as response:
+            if response.status != 200:
+                error_data = await response.text()
+                log.error(f"Battle.net token error: {error_data}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to obtain Battle.net token.",
+                )
 
-        # set role metadata
-        await user.edit_role_connection(role)
+            bnet_token_data = await response.json()
 
-        # save data to db
-        await GuildMember.create_table(if_not_exists=True)
-        log.info(f"Inserting {character_name} into db")
-        await GuildMember.insert(
-            GuildMember(
-                user_id=str(user.id),
-                character_name=character_name,
-                guild_rank=str(player_character.guild_rank),
-                ilvl=str(player_character.ilvl),
-                score=str(player_character.score),
-                guild_lb_position=player_character.guild_lb_position,
-                access_token=token.access_token,
-                refresh_token=token.refresh_token,
-                token_expires_at=str(token.expires_at.timestamp()),
-            ),
-        ).on_conflict(
-            action="DO UPDATE",
-            values=GuildMember.all_columns(),
-            target=GuildMember.user_id,
+    await BnetToken.insert(
+        BnetToken(
+            user_id=int(discord_user_id),
+            access_token=bnet_token_data["access_token"],
+            token_type=bnet_token_data["token_type"],
+            expires_at=int(time.time()) + bnet_token_data["expires_in"],
+            scope=bnet_token_data["scope"],
+            sub=bnet_token_data["sub"],  # bnet id
         )
-        log.info(f"Inserted {character_name} into db")
+    ).on_conflict(
+        action="DO UPDATE",
+        values=BnetToken.all_columns(),
+        target=BnetToken.user_id,
+    )
 
-        return (
-            f"Sve je prošlo ok. "
-            f"Tvoj character je {character_name}. Klikni 'Finish' u Discordu."
-        )
-    log.info(f"{user.id} tried to authenticate but is not in the list of members.")
-    return "Nisi autoriziran za ovu radnju. Ako je ovo greška, kontaktiraj @Karlo"
+    async with aiohttp.ClientSession() as session:
+        url = f"{config.BNET_API_URL}/profile/user/wow"
+        headers = {"Authorization": f"Bearer {bnet_token_data['access_token']}"}
+        params = {":region": "eu", "namespace": "profile-eu", "locale": "en_US"}
+        async with session.get(url, headers=headers, params=params) as response:
+            if response.status != 200:
+                data = await response.json()
+                log.error(f"Battle.net API error: {data}\n{url}\n{headers}")
+            else:
+                data = await response.json()
+                log.info(f"Fetched WoW profile: {data}")
+
+    return {
+        "status": "success",
+        "message": "Authentication completed successfully",
+        "user_id": discord_user_id,
+        "data": data,
+    }
+
+
+# async def add_approved_user(token, user):
+#     character_name = (
+#         await AssignedCharacter.select(AssignedCharacter.character_name)
+#         .where(AssignedCharacter.user_id == int(user.id))
+#         .first()
+#     ).get("character_name")
+
+#     # get character data
+#     player_character = await PlayerCharacter().create(character_name)
+
+#     # set role connection
+#     role = RoleConnection(
+#         platform_name=player_character.full_class_name, platform_username=character_name
+#     )
+
+#     # add metadata
+#     role.add_metadata(key="ilvl", value=player_character.ilvl)
+#     role.add_metadata(key="mplusscore", value=int(player_character.score))
+#     if player_character.guild_lb_position:
+#         role.add_metadata(key="guildlbposition", value=player_character.guild_lb_position)
+#     if player_character.guild_rank and player_character.guild_rank <= 3:
+#         role.add_metadata(key="raider", value=True)
+
+#         # set role metadata
+#     await user.edit_role_connection(role)
+
+#     # save data to db
+#     await GuildMember.create_table(if_not_exists=True)
+#     log.info(f"Inserting {character_name} into db")
+#     await GuildMember.insert(
+#         GuildMember(
+#             user_id=str(user.id),
+#             character_name=character_name,
+#             guild_rank=str(player_character.guild_rank),
+#             ilvl=str(player_character.ilvl),
+#             score=str(player_character.score),
+#             guild_lb_position=player_character.guild_lb_position,
+#             access_token=token.access_token,
+#             refresh_token=token.refresh_token,
+#             token_expires_at=str(token.expires_at.timestamp()),
+#         ),
+#     ).on_conflict(
+#         action="DO UPDATE",
+#         values=GuildMember.all_columns(),
+#         target=GuildMember.user_id,
+#     )
+#     log.info(f"Inserted {character_name} into db")
+#     return character_name
 
 
 class UpdateUsers:
@@ -144,10 +243,9 @@ class UpdateUsers:
                 token_expires_at=str(token.expires_at.timestamp()),
             ).where(GuildMember.user_id == str(member["user_id"])).run()
 
-            try:
-                user = await client.fetch_user(token)
-            except InternalServerError as e:
-                log.error(f"Error fetching user {member['character_name']}: {e}")
+            user = await client.fetch_user(token)
+            if not user:
+                log.error(f"Failed to fetch user with token\n{token}")
                 continue
 
             # log.info(f"{role.to_dict()}")  # debug
@@ -156,7 +254,7 @@ class UpdateUsers:
                 await AssignedCharacter.select(AssignedCharacter.character_name)
                 .where(AssignedCharacter.user_id == int(user.id))
                 .first()
-            )["character_name"]
+            ).get("character_name")
 
             try:
                 log.debug(f"Fetching character {name}")
@@ -172,7 +270,7 @@ class UpdateUsers:
             role.add_metadata(key="mplusscore", value=int(float(member["score"])))
             if member["guild_lb_position"]:
                 role.add_metadata(key="guildlbposition", value=member["guild_lb_position"])
-            if member["guild_rank"] != 'None' and int(member["guild_rank"]) <= 3:
+            if member["guild_rank"] != "None" and int(member["guild_rank"]) <= 3:
                 role.add_metadata(key="raider", value=True)
 
             changes = await self.update_member_data(member, player_character, role, user)
