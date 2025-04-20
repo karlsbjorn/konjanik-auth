@@ -156,6 +156,18 @@ async def bnet_callback(
         target=BnetToken.user_id,
     )
 
+    await GuildMember.insert(
+        GuildMember(
+            user_id=int(discord_user_id),
+            discord_token=int(discord_user_id),
+            bnet_token=int(discord_user_id),
+        )
+    ).on_conflict(
+        action="DO UPDATE",
+        values=GuildMember.all_columns(),
+        target=GuildMember.user_id,
+    )
+
     async with aiohttp.ClientSession() as session:
         url = f"{config.BNET_API_URL}/profile/user/wow"
         headers = {"Authorization": f"Bearer {bnet_token_data['access_token']}"}
@@ -165,14 +177,12 @@ async def bnet_callback(
                 data = await response.json()
                 log.error(f"Battle.net API error: {data}\n{url}\n{headers}")
             else:
-                data = await response.json()
-                log.info(f"Fetched WoW profile: {data}")
+                log.info(f"Fetched WoW profile for {discord_user_id}")
 
     return {
         "status": "success",
-        "message": "Authentication completed successfully",
+        "message": "Autentifikacija uspjela.",
         "user_id": discord_user_id,
-        "data": data,
     }
 
 
