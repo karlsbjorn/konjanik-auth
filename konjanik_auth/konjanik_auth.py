@@ -14,7 +14,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
 from konjanik_auth import config
-from konjanik_auth.models import AssignedCharacter, BnetToken, DiscordToken, GuildMember
+from konjanik_auth.models import BnetToken, DiscordToken, GuildMember
 from konjanik_auth.playercharacter import CharacterNotFound, PlayerCharacter
 
 logging.basicConfig(level=logging.INFO)
@@ -240,116 +240,119 @@ class UpdateUsers:
     @tasks.loop(hours=1)
     async def update_users(self):
         log.info("Updating users")
-        for member in await GuildMember.select():
+        guild_members = await GuildMember.objects().prefetch(GuildMember.discord_token)
+        for member in guild_members:
             try:
-                refreshed_token = await client._http.refresh_oauth2_token(member["refresh_token"])
-            except Exception as e:
-                log.warning(f"Error refreshing token for {member['character_name']}: {e}")
-                continue
-            token = OAuth2Token(client, refreshed_token)
-            await GuildMember.update(
-                access_token=token.access_token,
-                refresh_token=token.refresh_token,
-                token_expires_at=str(token.expires_at.timestamp()),
-            ).where(GuildMember.user_id == str(member["user_id"])).run()
-
-            user = await client.fetch_user(token)
-            if not user:
-                log.error(f"Failed to fetch user with token\n{token}")
-                continue
-
-            # log.info(f"{role.to_dict()}")  # debug
-
-            name = (
-                await AssignedCharacter.select(AssignedCharacter.character_name)
-                .where(AssignedCharacter.user_id == int(user.id))
-                .first()
-            ).get("character_name")
-
-            try:
-                log.debug(f"Fetching character {name}")
-                player_character = await PlayerCharacter().create(name)
-            except CharacterNotFound as e:
-                log.error(f"Error fetching character {name}: {e}")
-                continue
-
-            role = RoleConnection(
-                platform_name=player_character.full_class_name, platform_username=name
-            )
-            role.add_metadata(key="ilvl", value=int(member["ilvl"]))
-            role.add_metadata(key="mplusscore", value=int(float(member["score"])))
-            if member["guild_lb_position"]:
-                role.add_metadata(key="guildlbposition", value=member["guild_lb_position"])
-            if member["guild_rank"] != "None" and int(member["guild_rank"]) <= 3:
-                role.add_metadata(key="raider", value=True)
-
-            changes = await self.update_member_data(member, player_character, role, user)
-            if not changes:
-                continue
-
-            try:
-                await user.edit_role_connection(role)
-                log.debug(f"Updated user {name}")
-            except (ValueError, TypeError):
-                log.error(f"Error updating user {name}", exc_info=True)
-
-    @staticmethod
-    async def update_member_data(member, player_character, role, user):
-        changes = False
-
-        if player_character.name != member["character_name"]:
-            log.info(f"Updating {player_character.name}'s name")
-            await GuildMember.update(character_name=player_character.name).where(
-                GuildMember.user_id == str(user.id)
-            ).run()
-            changes = True
-
-        if player_character.ilvl != int(member["ilvl"]):
-            log.info(f"Updating {player_character.name} ilvl")
-            await GuildMember.update(ilvl=str(player_character.ilvl)).where(
-                GuildMember.user_id == str(user.id)
-            ).run()
-            role.add_or_edit_metadata(key="ilvl", value=int(player_character.ilvl))
-            changes = True
-
-        if player_character.score != float(member["score"]):
-            log.info(f"Updating {player_character.name} score")
-            await GuildMember.update(score=str(player_character.score)).where(
-                GuildMember.user_id == str(user.id)
-            ).run()
-            role.add_or_edit_metadata(key="mplusscore", value=int(player_character.score))
-            changes = True
-
-        if player_character.guild_lb_position != member["guild_lb_position"]:
-            log.info(f"Updating {player_character.name} guild_lb_position")
-            await GuildMember.update(guild_lb_position=player_character.guild_lb_position).where(
-                GuildMember.user_id == str(user.id)
-            ).run()
-            if player_character.guild_lb_position:
-                role.add_or_edit_metadata(
-                    key="guildlbposition", value=player_character.guild_lb_position
+                discord_token: DiscordToken = member.discord_token
+                if not discord_token or not discord_token.refresh_token:
+                    log.warning(f"Missing Discord token for {member.user_id}")
+                    continue
+                refreshed_token = await client._http.refresh_oauth2_token(
+                    discord_token.refresh_token
                 )
-            else:
-                role.remove_metadata(key="guildlbposition")
-            changes = True
+                token = OAuth2Token(client, refreshed_token)
 
-        # Pro tip: Don't ever make everything in a table be Text type :)
-        if player_character.guild_rank is not None and player_character.guild_rank != int(
-            member["guild_rank"]
-        ):
-            # This will need to be changed if we're doing anything other than Raider rank
-            log.info(f"Updating {player_character.name} guild_rank")
-            await GuildMember.update(guild_rank=str(player_character.guild_rank)).where(
-                GuildMember.user_id == str(user.id)
-            ).run()
-            if player_character.guild_rank is not None and player_character.guild_rank <= 3:
-                role.add_or_edit_metadata(key="raider", value=True)
-            else:
-                role.remove_metadata(key="raider")
-            changes = True
+                await DiscordToken.update(
+                    {
+                        DiscordToken.access_token: token.access_token,
+                        DiscordToken.refresh_token: token.refresh_token,
+                        DiscordToken.expires_at: int(token.expires_at.timestamp()),
+                    }
+                ).where(DiscordToken.user_id == member.user_id).run()
+            except Exception as e:
+                log.warning(f"Error refreshing token for {member.user_id}: {e}")
+                continue
 
-        return changes
+            # user = await client.fetch_user(token)
+            # if not user:
+            #     log.error(f"Failed to fetch user with token\n{token}")
+            #     continue
 
-    @update_users.error
-    async def update_users_error(self, error):
-        log.error(f"Unhandled error in update_users: {error}", exc_info=True)
+            # try:
+            #     log.debug(f"Fetching character {name}")
+            #     player_character = await PlayerCharacter().create(name)
+            # except CharacterNotFound as e:
+            #     log.error(f"Error fetching character {name}: {e}")
+            #     continue
+
+            # role = RoleConnection(
+            #     platform_name=player_character.full_class_name, platform_username=name
+            # )
+            # role.add_metadata(key="ilvl", value=int(member["ilvl"]))
+            # role.add_metadata(key="mplusscore", value=int(float(member["score"])))
+            # if member["guild_lb_position"]:
+            #     role.add_metadata(key="guildlbposition", value=member["guild_lb_position"])
+            # if member["guild_rank"] != "None" and int(member["guild_rank"]) <= 3:
+            #     role.add_metadata(key="raider", value=True)
+
+            # changes = await self.update_member_data(member, player_character, role, user)
+            # if not changes:
+            #     continue
+
+            # try:
+            #     await user.edit_role_connection(role)
+            #     log.debug(f"Updated user {name}")
+            # except (ValueError, TypeError):
+            #     log.error(f"Error updating user {name}", exc_info=True)
+
+
+#     @staticmethod
+#     async def update_member_data(member, player_character, role, user):
+#         changes = False
+
+#         if player_character.name != member["character_name"]:
+#             log.info(f"Updating {player_character.name}'s name")
+#             await GuildMember.update(character_name=player_character.name).where(
+#                 GuildMember.user_id == str(user.id)
+#             ).run()
+#             changes = True
+
+#         if player_character.ilvl != int(member["ilvl"]):
+#             log.info(f"Updating {player_character.name} ilvl")
+#             await GuildMember.update(ilvl=str(player_character.ilvl)).where(
+#                 GuildMember.user_id == str(user.id)
+#             ).run()
+#             role.add_or_edit_metadata(key="ilvl", value=int(player_character.ilvl))
+#             changes = True
+
+#         if player_character.score != float(member["score"]):
+#             log.info(f"Updating {player_character.name} score")
+#             await GuildMember.update(score=str(player_character.score)).where(
+#                 GuildMember.user_id == str(user.id)
+#             ).run()
+#             role.add_or_edit_metadata(key="mplusscore", value=int(player_character.score))
+#             changes = True
+
+#         if player_character.guild_lb_position != member["guild_lb_position"]:
+#             log.info(f"Updating {player_character.name} guild_lb_position")
+#             await GuildMember.update(guild_lb_position=player_character.guild_lb_position).where(
+#                 GuildMember.user_id == str(user.id)
+#             ).run()
+#             if player_character.guild_lb_position:
+#                 role.add_or_edit_metadata(
+#                     key="guildlbposition", value=player_character.guild_lb_position
+#                 )
+#             else:
+#                 role.remove_metadata(key="guildlbposition")
+#             changes = True
+
+#         # Pro tip: Don't ever make everything in a table be Text type :)
+#         if player_character.guild_rank is not None and player_character.guild_rank != int(
+#             member["guild_rank"]
+#         ):
+#             # This will need to be changed if we're doing anything other than Raider rank
+#             log.info(f"Updating {player_character.name} guild_rank")
+#             await GuildMember.update(guild_rank=str(player_character.guild_rank)).where(
+#                 GuildMember.user_id == str(user.id)
+#             ).run()
+#             if player_character.guild_rank is not None and player_character.guild_rank <= 3:
+#                 role.add_or_edit_metadata(key="raider", value=True)
+#             else:
+#                 role.remove_metadata(key="raider")
+#             changes = True
+
+#         return changes
+
+#     @update_users.error
+#     async def update_users_error(self, error):
+#         log.error(f"Unhandled error in update_users: {error}", exc_info=True)

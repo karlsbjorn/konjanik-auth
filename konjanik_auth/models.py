@@ -1,4 +1,4 @@
-from piccolo.columns import BigInt, ForeignKey, SmallInt, Text, Varchar
+from piccolo.columns import BigInt, ForeignKey, SmallInt, Text, Varchar, Integer
 from piccolo.table import Table
 
 
@@ -18,20 +18,22 @@ class BnetToken(Table):
     sub = Text(null=True)  # bnet id
 
 
-class Character(Table):
-    character_id = BigInt(primary_key=True, auto_increment=True)
-    character_name = Varchar(length=100)
-    realm = Varchar(length=100)
-    guild = Varchar(length=100, null=True)
-    bnet_token = ForeignKey(references=BnetToken)
-    ilvl = Text(null=True)
-    score = Text(null=True)
-
-
 class GuildMember(Table):
     user_id = BigInt(primary_key=True, unique=True)
     discord_token = ForeignKey(references=DiscordToken)
     bnet_token = ForeignKey(references=BnetToken)
     guild_rank = Text(null=True)
     guild_lb_position = SmallInt(null=True)
-    main_character = ForeignKey(references=Character, null=True)
+    main_character_id = Integer(null=True)
+
+
+class Character(Table):
+    character_id = BigInt(primary_key=True, unique=True)
+    character_name = Varchar(length=100)
+    realm_id = BigInt()
+    realm = Varchar(length=100)
+    guild = Varchar(length=100, null=True)
+    bnet_token = ForeignKey(references=BnetToken)
+    ilvl = Text(null=True)
+    score = Text(null=True)
+    guild_member = ForeignKey(references=GuildMember)
