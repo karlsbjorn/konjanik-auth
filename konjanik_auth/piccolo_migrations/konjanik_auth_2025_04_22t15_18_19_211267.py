@@ -1,12 +1,13 @@
 from piccolo.apps.migrations.auto.migration_manager import MigrationManager
-from piccolo.columns.base import OnDelete
-from piccolo.columns.base import OnUpdate
-from piccolo.columns.column_types import BigInt
-from piccolo.columns.column_types import ForeignKey
-from piccolo.columns.column_types import Integer
-from piccolo.columns.column_types import SmallInt
-from piccolo.columns.column_types import Text
-from piccolo.columns.column_types import Varchar
+from piccolo.columns.base import OnDelete, OnUpdate
+from piccolo.columns.column_types import (
+    BigInt,
+    ForeignKey,
+    Integer,
+    SmallInt,
+    Text,
+    Varchar,
+)
 from piccolo.columns.indexes import IndexMethod
 from piccolo.table import Table
 

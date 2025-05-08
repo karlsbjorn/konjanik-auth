@@ -1,13 +1,15 @@
 import logging
+import secrets
 import time
+import uuid
 from urllib.parse import urlencode
 
 import aiohttp
 import sentry_sdk
 from discord.ext import tasks
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
+from linked_roles import LinkedRolesOAuth2, OAuth2Scopes
 from linked_roles.oauth2 import OAuth2Token
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -15,7 +17,6 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 
 from konjanik_auth import config
 from konjanik_auth.models import BnetToken, DiscordToken, GuildMember
-from konjanik_auth.playercharacter import CharacterNotFound, PlayerCharacter
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ sentry_sdk.init(
 )
 
 app = FastAPI(title="Konjanik OAuth2")
+sessions: dict[str, dict] = {}  # probably use redis or something idk
 
 client = LinkedRolesOAuth2(
     client_id=config.DISCORD_CLIENT_ID,
@@ -63,8 +65,21 @@ async def linked_roles():
     return RedirectResponse(url=url)
 
 
+def get_current_user(request: Request):
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in sessions:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authed")
+
+    session_data = sessions[session_id]
+    if session_data["expires_at"] < time.time():
+        sessions.pop(session_id)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+
+    return session_data["discord_user_id"]
+
+
 @app.get("/verified-role")
-async def verified_role(code: str):
+async def verified_role(response: Response, code: str):
     # get token
     token = await client.get_access_token(code)
 
@@ -88,20 +103,36 @@ async def verified_role(code: str):
         target=DiscordToken.user_id,
     )
 
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = {
+        "discord_user_id": str(user_id),
+        "created_at": time.time(),
+        "expires_at": time.time() + 3600,
+    }
+
     # Have user log into bnet as well
-    response = RedirectResponse(url=f"/bnet-auth?discord_user_id={user_id}")
+    response = RedirectResponse(url="/bnet-auth")
+    response.set_cookie(
+        key="session_id", value=session_id, httponly=True, secure=True, max_age=3600
+    )
     return response
 
 
 @app.get("/bnet-auth")
-async def bnet_auth(discord_user_id: str):
+async def bnet_auth(discord_user_id: str = Depends(get_current_user)):
     """Initiate Battle.net OAuth flow"""
+    anti_csrf = secrets.token_hex(16)
+    for session_id, session_data in sessions.items():
+        if session_data["discord_user_id"] == discord_user_id:
+            session_data["anti_csrf"] = anti_csrf
+            break
+
     params = {
         "client_id": config.BNET_CLIENT_ID,
         "redirect_uri": config.BNET_REDIRECT_URI,
         "response_type": "code",
         "scope": "wow.profile",
-        "state": discord_user_id,  # Pass Discord user ID as state for verification
+        "state": f"{discord_user_id}:{anti_csrf}",  # Pass Discord user ID as state for verification
     }
 
     auth_url = f"{config.BNET_AUTHORIZE_URL}?{urlencode(params)}"
@@ -110,15 +141,28 @@ async def bnet_auth(discord_user_id: str):
 
 @app.get("/bnet-callback")
 async def bnet_callback(
+    request: Request,
     code: str,
     state: str,
 ):
-    discord_user_id = state
-    if not state:
+    try:
+        discord_user_id, anti_csrf = state.split(":")
+    except ValueError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You missed a step. Log in through Discord first.",
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state format."
         )
+
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in sessions:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session invalid.")
+    session_data = sessions[session_id]
+    if session_data["discord_user_id"] != discord_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Session verification failed."
+        )
+    if session_data.get("anti_csrf") != anti_csrf:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="CSRF failure.")
+    sessions.pop(session_id)
 
     async with aiohttp.ClientSession() as session:
         auth = aiohttp.BasicAuth(config.BNET_CLIENT_ID, config.BNET_CLIENT_SECRET)
@@ -181,7 +225,7 @@ async def bnet_callback(
 
     return {
         "status": "success",
-        "message": "Autentifikacija uspjela.",
+        "message": "Autorizacija uspjela.",
         "user_id": discord_user_id,
     }
 

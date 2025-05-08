@@ -1,4 +1,4 @@
-from piccolo.columns import BigInt, ForeignKey, SmallInt, Text, Varchar, Integer
+from piccolo.columns import BigInt, ForeignKey, Integer, SmallInt, Text, Varchar
 from piccolo.table import Table
 
 
