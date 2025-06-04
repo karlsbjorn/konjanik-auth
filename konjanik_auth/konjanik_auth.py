@@ -9,7 +9,7 @@ import sentry_sdk
 from discord.ext import tasks
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from linked_roles import LinkedRolesOAuth2, OAuth2Scopes
+from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
 from linked_roles.oauth2 import OAuth2Token
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -65,7 +65,7 @@ async def linked_roles():
     return RedirectResponse(url=url)
 
 
-def get_current_user(request: Request):
+def get_current_user(request: Request) -> str:
     session_id = request.cookies.get("session_id")
     if not session_id or session_id not in sessions:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authed")
@@ -79,7 +79,7 @@ def get_current_user(request: Request):
 
 
 @app.get("/verified-role")
-async def verified_role(response: Response, code: str):
+async def verified_role(response: Response, code: str) -> RedirectResponse:
     # get token
     token = await client.get_access_token(code)
 
@@ -119,7 +119,7 @@ async def verified_role(response: Response, code: str):
 
 
 @app.get("/bnet-auth")
-async def bnet_auth(discord_user_id: str = Depends(get_current_user)):
+async def bnet_auth(discord_user_id: str = Depends(get_current_user)) -> RedirectResponse:
     """Initiate Battle.net OAuth flow"""
     anti_csrf = secrets.token_hex(16)
     for session_id, session_data in sessions.items():
@@ -208,7 +208,7 @@ async def bnet_callback(
         )
     ).on_conflict(
         action="DO UPDATE",
-        values=GuildMember.all_columns(),
+        values=[GuildMember.user_id, GuildMember.discord_token, GuildMember.bnet_token],
         target=GuildMember.user_id,
     )
 
@@ -253,7 +253,7 @@ async def bnet_callback(
 #     if player_character.guild_rank and player_character.guild_rank <= 3:
 #         role.add_metadata(key="raider", value=True)
 
-#         # set role metadata
+#     # set role metadata
 #     await user.edit_role_connection(role)
 
 #     # save data to db
