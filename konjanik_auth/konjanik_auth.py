@@ -9,7 +9,7 @@ import sentry_sdk
 from discord.ext import tasks
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RoleConnection
+from linked_roles import LinkedRolesOAuth2, OAuth2Scopes
 from linked_roles.oauth2 import OAuth2Token
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -295,6 +295,7 @@ class UpdateUsers:
                     discord_token.refresh_token
                 )
                 token = OAuth2Token(client, refreshed_token)
+                log.info(token)
 
                 await DiscordToken.update(
                     {
