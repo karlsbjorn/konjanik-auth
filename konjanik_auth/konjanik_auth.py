@@ -1,3 +1,7 @@
+from linked_roles.user import User
+
+
+from linked_roles.oauth2 import OAuth2Token
 import logging
 import secrets
 import time
@@ -84,10 +88,15 @@ async def verified_role(response: Response, code: str) -> RedirectResponse:
     token = await client.get_access_token(code)
 
     # get user
-    user = await client.fetch_user(token)
+    user: User | None = await client.fetch_user(token)
     if not user:
         log.error("Failed to fetch user")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    
+    # check if user is in the discord guild
+    jrk_guild_id = 362298824854863882
+
+
     user_id = int(user.id)
 
     await DiscordToken.insert(
@@ -294,8 +303,8 @@ class UpdateUsers:
                 refreshed_token = await client._http.refresh_oauth2_token(
                     discord_token.refresh_token
                 )
-                token = OAuth2Token(client, refreshed_token)
-                log.info(token)
+                token: OAuth2Token = OAuth2Token(client, refreshed_token)
+                log.info(f"{member.user_id}: {token.access_token}, {token.refresh_token}")
 
                 await DiscordToken.update(
                     {
