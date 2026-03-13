@@ -14,7 +14,6 @@ from discord.ext import tasks
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from linked_roles import LinkedRolesOAuth2, OAuth2Scopes
-from linked_roles.oauth2 import OAuth2Token
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -92,10 +91,6 @@ async def verified_role(response: Response, code: str) -> RedirectResponse:
     if not user:
         log.error("Failed to fetch user")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    
-    # check if user is in the discord guild
-    jrk_guild_id = 362298824854863882
-
 
     user_id = int(user.id)
 
@@ -122,19 +117,27 @@ async def verified_role(response: Response, code: str) -> RedirectResponse:
     # Have user log into bnet as well
     response = RedirectResponse(url="/bnet-auth")
     response.set_cookie(
-        key="session_id", value=session_id, httponly=True, secure=True, max_age=3600
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        secure=True,
+        max_age=3600,
+        samesite="lax",
     )
     return response
 
 
 @app.get("/bnet-auth")
-async def bnet_auth(discord_user_id: str = Depends(get_current_user)) -> RedirectResponse:
+async def bnet_auth(
+    request: Request, discord_user_id: str = Depends(get_current_user)
+) -> RedirectResponse:
     """Initiate Battle.net OAuth flow"""
     anti_csrf = secrets.token_hex(16)
-    for session_id, session_data in sessions.items():
-        if session_data["discord_user_id"] == discord_user_id:
-            session_data["anti_csrf"] = anti_csrf
-            break
+    session_id = request.cookies.get("session_id")
+    if session_id and session_id in sessions:
+        sessions[session_id]["anti_csrf"] = anti_csrf
+    if "anti_csrf" not in sessions[session_id]:
+        sessions[session_id]["anti_csrf"] = anti_csrf
 
     params = {
         "client_id": config.BNET_CLIENT_ID,
